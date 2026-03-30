@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 DATA_FILE = "/tmp/months.json"
-UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
+UPLOADS_DIR = "/tmp/uploads"
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
