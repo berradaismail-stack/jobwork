@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Verifier</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #0d1117;
+            color: #e2e8f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ── Header ── */
+        .header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 14px 28px;
+            display: flex;
+            align-items: center;
+        }
+        .header-title { font-size: 17px; font-weight: 700; color: #f0f6fc; letter-spacing: -0.02em; }
+        .header-sub { font-size: 12px; color: #6e7681; margin-top: 2px; }
+
+        /* ── Tabs ── */
+        .tabs-bar {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 0 28px;
+            display: flex;
+            gap: 2px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .tabs-bar::-webkit-scrollbar { display: none; }
+
+        .tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #8b949e;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s;
+            white-space: nowrap;
+            position: relative;
+            top: 1px;
+        }
+        .tab:hover { color: #e2e8f0; }
+        .tab.active { color: #f0f6fc; border-bottom-color: #388bfd; }
+
+        .badge-approved {
+            background: rgba(63,185,80,0.15);
+            color: #3fb950;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 7px;
+            letter-spacing: 0.03em;
+        }
+
+        /* ── Main ── */
+        .main { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+
+        /* ── Error banner ── */
+        .error-banner {
+            display: none;
+            background: rgba(248,81,73,0.08);
+            border: 1px solid rgba(248,81,73,0.3);
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-size: 13px;
+            color: #f85149;
+            margin-bottom: 16px;
+        }
+
+        /* ── Approved notice ── */
+        .approved-notice {
+            background: rgba(63,185,80,0.06);
+            border: 1px solid rgba(63,185,80,0.2);
+            border-radius: 8px;
+            padding: 14px 18px;
+            color: #3fb950;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .approved-notice .approved-date {
+            font-size: 12px;
+            font-weight: 400;
+            color: #6e7681;
+            margin-left: auto;
+        }
+
+        /* ── Screenshot section ── */
+        .screenshot-section {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 18px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .upload-col { flex: 0 0 200px; display: flex; flex-direction: column; gap: 8px; }
+
+        .upload-zone {
+            border: 2px dashed #30363d;
+            border-radius: 8px;
+            padding: 20px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+        .upload-zone:hover, .upload-zone.drag-over {
+            border-color: #388bfd;
+            background: rgba(56,139,253,0.05);
+        }
+        .upload-zone input[type="file"] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+        }
+        .upload-icon { font-size: 26px; }
+        .upload-text { font-size: 11px; color: #8b949e; line-height: 1.5; }
+        .upload-text strong { color: #388bfd; }
+
+        .upload-status { font-size: 12px; min-height: 16px; }
+        .upload-status.ok    { color: #3fb950; }
+        .upload-status.error { color: #f85149; }
+        .upload-status.info  { color: #8b949e; }
+
+        .preview-col {
+            flex: 1;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .preview-col img {
+            max-height: 220px;
+            max-width: 100%;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+            object-fit: contain;
+        }
+        .preview-empty { color: #484f58; font-size: 13px; }
+
+        /* ── Markets ── */
+        .markets-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 860px) { .markets-row { grid-template-columns: 1fr; } }
+
+        .market-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .market-header {
+            padding: 12px 18px;
+            background: #1c2128;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .market-flag { font-size: 22px; }
+        .market-name { font-size: 15px; font-weight: 700; color: #f0f6fc; }
+        .market-unit { font-size: 11px; color: #6e7681; margin-top: 1px; }
+        .market-body { padding: 14px 18px; }
+
+        /* ── Section labels ── */
+        .slabel {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #6e7681;
+            margin-bottom: 8px;
+        }
+        .slabel:not(:first-child) { margin-top: 14px; }
+
+        /* ── Field rows ── */
+        .frow {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 4px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #21262d;
+        }
+        .frow:last-child { border-bottom: none; }
+        .flabel { color: #8b949e; }
+        .fvalue { font-weight: 600; color: #f0f6fc; font-variant-numeric: tabular-nums; }
+        .fvalue.nil { color: #484f58; font-weight: 400; font-style: italic; }
+
+        /* ── Divider ── */
+        .div { height: 1px; background: #21262d; margin: 12px 0; }
+
+        /* ── Inputs ── */
+        .inputs-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 9px;
+        }
+        .ig { display: flex; flex-direction: column; gap: 3px; }
+        .ig label { font-size: 11px; color: #6e7681; }
+        .ig input {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 5px;
+            padding: 7px 10px;
+            color: #e2e8f0;
+            font-size: 13px;
+            width: 100%;
+            -moz-appearance: textfield;
+            transition: border-color 0.15s;
+        }
+        .ig input::-webkit-inner-spin-button,
+        .ig input::-webkit-outer-spin-button { -webkit-appearance: none; }
+        .ig input:focus { outline: none; border-color: #388bfd; }
+        .ig input:disabled { color: #484f58; cursor: not-allowed; }
+
+        /* ── Delta ── */
+        .delta-box {
+            margin-top: 12px;
+            padding: 11px 14px;
+            border-radius: 7px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 700;
+            border: 1px solid transparent;
+        }
+        .delta-box.zero       { background: rgba(63,185,80,0.08);   border-color: rgba(63,185,80,0.25);   color: #3fb950; }
+        .delta-box.nonzero    { background: rgba(248,81,73,0.08);   border-color: rgba(248,81,73,0.25);   color: #f85149; }
+        .delta-box.pending    { background: #1c2128; border-color: #30363d; color: #484f58; }
+        .delta-box.info-nonzero { background: rgba(210,153,34,0.08); border-color: rgba(210,153,34,0.25); color: #d2a520; }
+        .delta-sub { font-size: 11px; font-weight: 400; opacity: 0.7; }
+        .delta-info-tag { font-size: 10px; font-weight: 400; color: #6e7681; margin-left: 6px; }
+
+        .frow.subtotal {
+            background: #1c2128;
+            border-radius: 4px;
+            padding: 5px 8px;
+            margin: 2px 0;
+            border-bottom: none;
+        }
+        .frow.subtotal .flabel { color: #c9d1d9; font-weight: 600; }
+        .frow.subtotal .fvalue { color: #c9d1d9; }
+
+        /* ── Action bar ── */
+        .action-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            padding: 8px 0 4px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            border: none; border-radius: 7px; font-size: 13px; font-weight: 600;
+            cursor: pointer; padding: 9px 22px; transition: background 0.2s, transform 0.1s;
+        }
+        .btn:active:not(:disabled) { transform: scale(0.97); }
+        .btn-save {
+            background: transparent;
+            color: #388bfd;
+            border: 1px solid #388bfd;
+        }
+        .btn-save:hover:not(:disabled) { background: rgba(56,139,253,0.08); }
+        .btn-save:disabled { color: #484f58; border-color: #30363d; cursor: not-allowed; }
+
+        .btn-approve {
+            background: #238636;
+            color: #fff;
+            font-size: 14px;
+            padding: 10px 32px;
+        }
+        .btn-approve:hover:not(:disabled) { background: #2ea043; }
+        .btn-approve:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+
+        .action-hint { font-size: 12px; color: #6e7681; text-align: center; width: 100%; }
+
+        /* ── Spinner ── */
+        .spinner {
+            display: inline-block; width: 12px; height: 12px;
+            border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+            border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<header class="header">
+    <div>
+        <div class="header-title">Invoice Verifier</div>
+        <div class="header-sub">MA · TN — Monthly hub invoice verification</div>
+    </div>
+</header>
+
+<nav class="tabs-bar" id="tabsBar"></nav>
+
+<main class="main" id="mainArea"></main>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let months = [];
+let activeId = null;
+
+const MONTHS_EN = ['','January','February','March','April','May','June',
+                   'July','August','September','October','November','December'];
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function boot() {
+    try {
+        const r = await fetch('/api/months');
+        months = await r.json();
+    } catch { months = []; }
+
+    if (!months.length) return;
+    const open = [...months].reverse().find(m => m.status === 'open');
+    activeId = open ? open.id : months[months.length - 1].id;
+    renderTabs();
+    renderMain();
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function renderTabs() {
+    document.getElementById('tabsBar').innerHTML = months.map(m => {
+        const badge = m.status === 'approved'
+            ? `<span class="badge-approved">Approved</span>` : '';
+        return `<button class="tab${m.id === activeId ? ' active' : ''}"
+                    onclick="switchTab('${m.id}')">${m.label}${badge}</button>`;
+    }).join('');
+}
+
+function switchTab(id) {
+    activeId = id;
+    renderTabs();
+    renderMain();
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+function renderMain() {
+    const m = months.find(x => x.id === activeId);
+    if (!m) { document.getElementById('mainArea').innerHTML = ''; return; }
+
+    const approved = m.status === 'approved';
+    let html = `<div id="errorBanner" class="error-banner"></div>`;
+
+    if (approved) {
+        const dt = m.approved_at ? new Date(m.approved_at).toLocaleString() : '';
+        html += `<div class="approved-notice">
+            ✓ Month approved — read only
+            ${dt ? `<span class="approved-date">Approved ${dt}</span>` : ''}
+        </div>`;
+    }
+
+    html += renderScreenshot(m, approved);
+    html += `<div class="markets-row">
+        ${renderMarket(m, 'ma', approved)}
+        ${renderMarket(m, 'tn', approved)}
+    </div>`;
+
+    if (!approved) {
+        const bothZero = m.delta.ma === 0 && m.delta.tn === 0;
+        const pending  = m.delta.ma === null || m.delta.tn === null;
+        const hint = pending
+            ? 'Upload the invoice screenshot and fill all input fields, then click Save.'
+            : (!bothZero ? 'Both deltas must equal 0 before approving.' : '');
+
+        html += `<div class="action-bar">
+            <button class="btn btn-save" id="btnSave" onclick="handleSave()">Calculate &amp; Save</button>
+            <button class="btn btn-approve" id="btnApprove" onclick="handleApprove()"
+                ${bothZero ? '' : 'disabled'}>Approve Month</button>
+            ${hint ? `<div class="action-hint">${hint}</div>` : ''}
+        </div>`;
+    }
+
+    document.getElementById('mainArea').innerHTML = html;
+    if (!approved) wireUpload(m);
+}
+
+// ── Screenshot section ────────────────────────────────────────────────────────
+function renderScreenshot(m, approved) {
+    const hasFile = !!m.screenshot_filename;
+    const uploadHtml = approved ? '' : `
+        <div class="upload-zone" id="uploadZone">
+            <input type="file" id="screenshotInput" accept="image/*">
+            <div class="upload-icon">🖼</div>
+            <div class="upload-text">
+                ${hasFile ? '<strong>Re-upload</strong> to re-extract' : 'Upload invoice screenshot'}
+                <br><strong>Browse or drag &amp; drop</strong>
+            </div>
+        </div>
+        <div class="upload-status info" id="uploadStatus">
+            ${hasFile ? 'Screenshot on file. Re-upload to update.' : 'No screenshot yet.'}
+        </div>`;
+
+    const preview = hasFile
+        ? `<img src="/api/screenshot/${m.screenshot_filename}" alt="Invoice">`
+        : `<span class="preview-empty">No screenshot uploaded yet</span>`;
+
+    return `<div class="screenshot-section">
+        <div class="upload-col">${uploadHtml}</div>
+        <div class="preview-col" id="previewCol">${preview}</div>
+    </div>`;
+}
+
+function wireUpload(m) {
+    const zone  = document.getElementById('uploadZone');
+    const input = document.getElementById('screenshotInput');
+    if (!zone || !input) return;
+
+    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    zone.addEventListener('drop', e => {
+        e.preventDefault(); zone.classList.remove('drag-over');
+        if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0], m);
+    });
+    input.addEventListener('change', () => { if (input.files[0]) doUpload(input.files[0], m); });
+}
+
+async function doUpload(file, m) {
+    setStatus('<span class="spinner"></span> Extracting with Claude Vision…', 'info');
+    const fd = new FormData();
+    fd.append('screenshot', file);
+    fd.append('month_id', m.id);
+    try {
+        const r = await fetch('/api/extract', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Extraction failed');
+        const mo = months.find(x => x.id === m.id);
+        mo.extracted          = d.extracted;
+        mo.screenshot_filename = d.filename;
+        setStatus('Extraction complete.', 'ok');
+        renderMain();
+    } catch (e) {
+        setStatus(e.message, 'error');
+    }
+}
+
+function setStatus(msg, type) {
+    const el = document.getElementById('uploadStatus');
+    if (el) { el.innerHTML = msg; el.className = `upload-status ${type}`; }
+}
+
+// ── Market card ───────────────────────────────────────────────────────────────
+function renderMarket(m, mkt, approved) {
+    const isMA  = mkt === 'ma';
+    const flag  = isMA ? '🇲🇦' : '🇹🇳';
+    const name  = isMA ? 'Morocco (MA)' : 'Tunisia (TN)';
+    const unit  = isMA ? '94.38 MAD / hr' : '27.60 TND / hr';
+    const cur   = isMA ? 'MAD' : 'TND';
+
+    const ext     = m.extracted[mkt]  || {};
+    const inp     = m.inputs[mkt]     || {};
+    const calc    = m.calculated[mkt] || {};
+    const dlt     = m.delta[mkt];
+    const showLBE = m.id >= '2026-04';
+    const dlt2    = (m.delta2 || {})[mkt];
+
+    const fv = v => (v === null || v === undefined)
+        ? `<span class="fvalue nil">—</span>`
+        : `<span class="fvalue">${fmt(v)}</span>`;
+
+    const pct = v => (v === null || v === undefined)
+        ? `<span class="fvalue nil">—</span>`
+        : `<span class="fvalue">${v > 0 ? '+' : ''}${v}%</span>`;
+
+    // Extracted
+    const extBlock = `
+        <div class="slabel">Extracted from invoice</div>
+        <div class="frow"><span class="flabel">Invoiced prod. hours</span>${fv(ext.invoiced_prod_hours)}</div>
+        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${isMA ? '94.38 MAD' : '27.60 TND'} / hr</span></div>
+        <div class="frow"><span class="flabel">Prod. cost</span>${fv(ext.prod_cost)} <span style="font-size:11px;color:#484f58;margin-left:4px">${cur}</span></div>
+        <div class="frow"><span class="flabel">Training cost</span>${fv(ext.training_cost)}</div>
+        ${!isMA ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(ext.lcc_cost)}</div>` : ''}
+        ${isMA
+            ? `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
+                ext.prod_cost != null && ext.training_cost != null
+                    ? ext.prod_cost + ext.training_cost : null)}</div>`
+            : `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
+                ext.prod_cost != null && ext.training_cost != null
+                    ? ext.prod_cost + ext.training_cost : null)}</div>
+               <div class="frow subtotal"><span class="flabel">Subtotal (prod + training + LCC)</span>${fv(
+                ext.prod_cost != null && ext.training_cost != null && ext.lcc_cost != null
+                    ? ext.prod_cost + ext.training_cost + ext.lcc_cost : null)}</div>`
+        }
+        <div class="frow"><span class="flabel">Bonus / Malus %</span>${pct(ext.bonus_malus_pct)}</div>
+        <div class="frow"><span class="flabel">Bonus / Malus amount</span>${fv(ext.bonus_malus_amount)}</div>
+        <div class="frow"><span class="flabel"><strong>Total</strong></span>${fv(ext.total)}</div>`;
+
+    // Inputs
+    const dis = approved ? 'disabled' : '';
+    const inputBlock = `
+        <div class="slabel">Your inputs</div>
+        <div class="inputs-grid">
+            <div class="ig"><label>Forecast hours</label>
+                <input type="number" step="0.01" id="${mkt}_forecast"
+                    value="${inp.forecast ?? ''}" ${dis}></div>
+            <div class="ig"><label>Actual hours</label>
+                <input type="number" step="0.01" id="${mkt}_actual"
+                    value="${inp.actual ?? ''}" ${dis}></div>
+            <div class="ig"><label>Training hours</label>
+                <input type="number" step="0.01" id="${mkt}_training_hours"
+                    value="${inp.training_hours ?? ''}" ${dis}></div>
+            <div class="ig"><label>Bonus / Malus %</label>
+                <input type="number" step="0.01" id="${mkt}_bonus_malus_pct"
+                    value="${inp.bonus_malus_pct ?? ''}" ${dis}></div>
+            ${!isMA ? `<div class="ig"><label>LCC hours</label>
+                <input type="number" step="0.01" id="${mkt}_lcc_hours"
+                    value="${inp.lcc_hours ?? ''}" ${dis}></div>` : ''}
+        </div>`;
+
+    // LBE inputs (April 2026+)
+    const lbeBlock = showLBE ? `
+        <div class="slabel" style="margin-top:12px">Latest Best Estimate (LBE)</div>
+        <div class="inputs-grid">
+            <div class="ig"><label>LBE prod. hours</label>
+                <input type="number" step="0.01" id="${mkt}_lbe_prod_hours"
+                    value="${inp.lbe_prod_hours ?? ''}" ${dis}></div>
+            <div class="ig"><label>LBE training hours</label>
+                <input type="number" step="0.01" id="${mkt}_lbe_training_hours"
+                    value="${inp.lbe_training_hours ?? ''}" ${dis}></div>
+            ${!isMA ? `<div class="ig"><label>LBE LCC hours</label>
+                <input type="number" step="0.01" id="${mkt}_lbe_lcc_hours"
+                    value="${inp.lbe_lcc_hours ?? ''}" ${dis}></div>` : ''}
+            <div class="ig"><label>LBE Bonus / Malus amount</label>
+                <input type="number" step="0.01" id="${mkt}_lbe_bonus_malus_amount"
+                    value="${inp.lbe_bonus_malus_amount ?? ''}" ${dis}></div>
+        </div>` : '';
+
+    // Calculated
+    const calcBlock = `
+        <div class="slabel">Calculated (from your inputs)</div>
+        <div class="frow"><span class="flabel">Invoiced prod. hours</span>${fv(calc.invoiced_prod_hours)}</div>
+        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${isMA ? '94.38 MAD' : '27.60 TND'} / hr</span></div>
+        <div class="frow"><span class="flabel">Prod. cost</span>${fv(calc.prod_cost)}</div>
+        <div class="frow"><span class="flabel">Training cost</span>${fv(calc.training_cost)}</div>
+        ${!isMA ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(calc.lcc_cost)}</div>` : ''}
+        ${isMA
+            ? `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
+                calc.prod_cost != null && calc.training_cost != null
+                    ? calc.prod_cost + calc.training_cost : null)}</div>`
+            : `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
+                calc.prod_cost != null && calc.training_cost != null
+                    ? calc.prod_cost + calc.training_cost : null)}</div>
+               <div class="frow subtotal"><span class="flabel">Subtotal (prod + training + LCC)</span>${fv(
+                calc.prod_cost != null && calc.training_cost != null && calc.lcc_cost != null
+                    ? calc.prod_cost + calc.training_cost + calc.lcc_cost : null)}</div>`
+        }
+        <div class="frow"><span class="flabel">Bonus / Malus amount</span>${fv(calc.bonus_malus_amount)}</div>
+        <div class="frow"><span class="flabel"><strong>Total</strong></span>${fv(calc.total)}</div>`;
+
+    // Delta 1 (extracted − calculated) — gates approval
+    let dClass = 'pending', dVal = '—';
+    if (dlt === null || dlt === undefined) {
+        dClass = 'pending';
+    } else if (dlt === 0) {
+        dClass = 'zero'; dVal = `0.00 ${cur}`;
+    } else {
+        dClass = 'nonzero';
+        dVal = `${dlt > 0 ? '+' : ''}${fmt(dlt)} ${cur}`;
+    }
+
+    const deltaBlock = `
+        <div class="delta-box ${dClass}">
+            <span>Delta <span class="delta-sub">(extracted − calculated)</span></span>
+            <span>${dVal}</span>
+        </div>`;
+
+    // Delta 2 (inputs − LBE) — informational only, April 2026+
+    let d2Block = '';
+    if (showLBE) {
+        let d2Class = 'pending', d2Val = '—';
+        if (dlt2 !== null && dlt2 !== undefined) {
+            if (dlt2 === 0) { d2Class = 'zero'; d2Val = `0.00 ${cur}`; }
+            else { d2Class = 'info-nonzero'; d2Val = `${dlt2 > 0 ? '+' : ''}${fmt(dlt2)} ${cur}`; }
+        }
+        d2Block = `<div class="delta-box ${d2Class}" style="margin-top:6px;font-size:13px">
+            <span>Delta <span class="delta-sub">(inputs − LBE)</span><span class="delta-info-tag">informational</span></span>
+            <span>${d2Val}</span>
+        </div>`;
+    }
+
+    return `<div class="market-card">
+        <div class="market-header">
+            <span class="market-flag">${flag}</span>
+            <div>
+                <div class="market-name">${name}</div>
+                <div class="market-unit">${unit}</div>
+            </div>
+        </div>
+        <div class="market-body">
+            ${extBlock}
+            <div class="div"></div>
+            ${inputBlock}
+            ${lbeBlock}
+            <div class="div"></div>
+            ${calcBlock}
+            ${deltaBlock}
+            ${d2Block}
+        </div>
+    </div>`;
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+function collectInputs() {
+    const g = id => {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        const v = el.value.trim();
+        return v === '' ? null : parseFloat(v);
+    };
+    const showLBE = activeId >= '2026-04';
+    return {
+        inputs: {
+            ma: { forecast: g('ma_forecast'), actual: g('ma_actual'),
+                  training_hours: g('ma_training_hours'), bonus_malus_pct: g('ma_bonus_malus_pct'),
+                  lbe_prod_hours: showLBE ? g('ma_lbe_prod_hours') : null,
+                  lbe_training_hours: showLBE ? g('ma_lbe_training_hours') : null,
+                  lbe_bonus_malus_amount: showLBE ? g('ma_lbe_bonus_malus_amount') : null },
+            tn: { forecast: g('tn_forecast'), actual: g('tn_actual'),
+                  training_hours: g('tn_training_hours'), lcc_hours: g('tn_lcc_hours'),
+                  bonus_malus_pct: g('tn_bonus_malus_pct'),
+                  lbe_prod_hours: showLBE ? g('tn_lbe_prod_hours') : null,
+                  lbe_training_hours: showLBE ? g('tn_lbe_training_hours') : null,
+                  lbe_lcc_hours: showLBE ? g('tn_lbe_lcc_hours') : null,
+                  lbe_bonus_malus_amount: showLBE ? g('tn_lbe_bonus_malus_amount') : null }
+        }
+    };
+}
+
+async function handleSave() {
+    const m = months.find(x => x.id === activeId);
+    if (!m) return;
+    const btn = document.getElementById('btnSave');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    hideError();
+    try {
+        const body = collectInputs();
+        const r = await fetch(`/api/save/${activeId}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Save failed');
+        m.inputs     = body.inputs;
+        m.calculated = d.calculated;
+        m.delta      = d.delta;
+        m.delta2     = d.delta2 || { ma: null, tn: null };
+        renderMain();
+    } catch (e) {
+        showError(e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Calculate & Save'; }
+    }
+}
+
+// ── Approve ───────────────────────────────────────────────────────────────────
+async function handleApprove() {
+    const m = months.find(x => x.id === activeId);
+    if (!m || m.delta.ma !== 0 || m.delta.tn !== 0) return;
+    const btn = document.getElementById('btnApprove');
+    if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
+    hideError();
+    try {
+        const r = await fetch(`/api/approve/${activeId}`, { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Approval failed');
+        m.status      = 'approved';
+        m.approved_at = new Date().toISOString();
+        if (d.next_month_id && !months.find(x => x.id === d.next_month_id)) {
+            months.push({
+                id: d.next_month_id, label: monthLabel(d.next_month_id),
+                status: 'open', approved_at: null, screenshot_filename: null,
+                extracted: { ma: {}, tn: {} },
+                inputs: {
+                    ma: { forecast: null, actual: null, training_hours: null, bonus_malus_pct: null,
+                          lbe_prod_hours: null, lbe_training_hours: null, lbe_bonus_malus_amount: null },
+                    tn: { forecast: null, actual: null, training_hours: null, lcc_hours: null, bonus_malus_pct: null,
+                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null }
+                },
+                calculated: { ma: {}, tn: {} },
+                delta: { ma: null, tn: null },
+                delta2: { ma: null, tn: null }
+            });
+            activeId = d.next_month_id;
+        }
+        renderTabs();
+        renderMain();
+    } catch (e) {
+        showError(e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Approve Month'; }
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(v) {
+    return Number(v).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function monthLabel(id) {
+    const [y, m] = id.split('-');
+    return `${MONTHS_EN[parseInt(m)]} ${y}`;
+}
+
+function showError(msg) {
+    const el = document.getElementById('errorBanner');
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function hideError() {
+    const el = document.getElementById('errorBanner');
+    if (el) el.style.display = 'none';
+}
+
+boot();
+</script>
+</body>
+</html>
