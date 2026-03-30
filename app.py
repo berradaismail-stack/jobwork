@@ -17,7 +17,6 @@ ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 DATA_FILE = "/tmp/months.json"
 UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'uploads')
 
-os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
