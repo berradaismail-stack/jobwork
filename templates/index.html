@@ -105,17 +105,29 @@
 
         /* ── Screenshot section ── */
         .screenshot-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .upload-group {
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 10px;
-            padding: 18px 20px;
-            margin-bottom: 20px;
+            padding: 14px 16px;
             display: flex;
-            gap: 20px;
-            align-items: flex-start;
+            flex-direction: column;
+            gap: 8px;
         }
-
-        .upload-col { flex: 0 0 200px; display: flex; flex-direction: column; gap: 8px; }
+        .upload-group-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 2px;
+        }
 
         .upload-zone {
             border: 2px dashed #30363d;
@@ -147,14 +159,13 @@
         .upload-status.info  { color: #8b949e; }
 
         .preview-col {
-            flex: 1;
-            min-height: 100px;
             display: flex;
             align-items: center;
             justify-content: center;
+            min-height: 80px;
         }
         .preview-col img {
-            max-height: 220px;
+            max-height: 140px;
             max-width: 100%;
             border-radius: 6px;
             border: 1px solid #30363d;
@@ -384,14 +395,20 @@ function renderMain() {
     html += `<div class="markets-row">
         ${renderMarket(m, 'ma', approved)}
         ${renderMarket(m, 'tn', approved)}
+    </div>
+    <div class="markets-row">
+        ${renderMarket(m, 'ke', approved)}
+        ${renderMarket(m, 'ng', approved)}
     </div>`;
 
     if (!approved) {
-        const bothZero = m.delta.ma === 0 && m.delta.tn === 0;
-        const pending  = m.delta.ma === null || m.delta.tn === null;
+        const dke = (m.delta || {}).ke;
+        const dng = (m.delta || {}).ng;
+        const bothZero = m.delta.ma === 0 && m.delta.tn === 0 && dke === 0 && dng === 0;
+        const pending  = m.delta.ma === null || m.delta.tn === null || dke == null || dng == null;
         const hint = pending
             ? 'Upload the invoice screenshot and fill all input fields, then click Save.'
-            : (!bothZero ? 'Both deltas must equal 0 before approving.' : '');
+            : (!bothZero ? 'All four market deltas must equal 0 before approving.' : '');
 
         html += `<div class="action-bar">
             <button class="btn btn-save" id="btnSave" onclick="handleSave()">Calculate &amp; Save</button>
@@ -406,83 +423,96 @@ function renderMain() {
 }
 
 // ── Screenshot section ────────────────────────────────────────────────────────
+const SCREENSHOT_GROUPS = [
+    { id: 'matn', label: 'Morocco & Tunisia 🇲🇦🇹🇳' },
+    { id: 'ke',   label: 'Kenya 🇰🇪' },
+    { id: 'ng',   label: 'Nigeria 🇳🇬' },
+];
+
 function renderScreenshot(m, approved) {
-    const hasFile = !!m.screenshot_filename;
-    const uploadHtml = approved ? '' : `
-        <div class="upload-zone" id="uploadZone">
-            <input type="file" id="screenshotInput" accept="image/*">
-            <div class="upload-icon">🖼</div>
-            <div class="upload-text">
-                ${hasFile ? '<strong>Re-upload</strong> to re-extract' : 'Upload invoice screenshot'}
-                <br><strong>Browse or drag &amp; drop</strong>
+    const filenames = m.screenshot_filenames || { matn: m.screenshot_filename || null, ke: null, ng: null };
+
+    return `<div class="screenshot-section">` + SCREENSHOT_GROUPS.map(g => {
+        const hasFile = !!filenames[g.id];
+        const uploadHtml = approved ? '' : `
+            <div class="upload-zone" id="uploadZone_${g.id}">
+                <input type="file" id="screenshotInput_${g.id}" accept="image/*">
+                <div class="upload-icon">🖼</div>
+                <div class="upload-text">
+                    ${hasFile ? '<strong>Re-upload</strong> to re-extract' : 'Upload screenshot'}
+                    <br><strong>Browse or drag &amp; drop</strong>
+                </div>
             </div>
-        </div>
-        <div class="upload-status info" id="uploadStatus">
-            ${hasFile ? 'Screenshot on file. Re-upload to update.' : 'No screenshot yet.'}
+            <div class="upload-status info" id="uploadStatus_${g.id}">
+                ${hasFile ? 'On file. Re-upload to update.' : 'No screenshot yet.'}
+            </div>`;
+        const preview = hasFile
+            ? `<img src="/api/screenshot/${filenames[g.id]}" alt="${g.label}">`
+            : `<span class="preview-empty">No screenshot uploaded yet</span>`;
+        return `<div class="upload-group">
+            <div class="upload-group-label">${g.label}</div>
+            ${uploadHtml}
+            <div class="preview-col" id="previewCol_${g.id}">${preview}</div>
         </div>`;
-
-    const preview = hasFile
-        ? `<img src="/api/screenshot/${m.screenshot_filename}" alt="Invoice">`
-        : `<span class="preview-empty">No screenshot uploaded yet</span>`;
-
-    return `<div class="screenshot-section">
-        <div class="upload-col">${uploadHtml}</div>
-        <div class="preview-col" id="previewCol">${preview}</div>
-    </div>`;
+    }).join('') + `</div>`;
 }
 
 function wireUpload(m) {
-    const zone  = document.getElementById('uploadZone');
-    const input = document.getElementById('screenshotInput');
-    if (!zone || !input) return;
-
-    zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-    zone.addEventListener('drop', e => {
-        e.preventDefault(); zone.classList.remove('drag-over');
-        if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0], m);
+    SCREENSHOT_GROUPS.forEach(g => {
+        const zone  = document.getElementById(`uploadZone_${g.id}`);
+        const input = document.getElementById(`screenshotInput_${g.id}`);
+        if (!zone || !input) return;
+        zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault(); zone.classList.remove('drag-over');
+            if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0], m, g.id);
+        });
+        input.addEventListener('change', () => { if (input.files[0]) doUpload(input.files[0], m, g.id); });
     });
-    input.addEventListener('change', () => { if (input.files[0]) doUpload(input.files[0], m); });
 }
 
-async function doUpload(file, m) {
-    setStatus('<span class="spinner"></span> Extracting with Claude Vision…', 'info');
+async function doUpload(file, m, marketGroup) {
+    setStatus('<span class="spinner"></span> Extracting with Claude Vision…', 'info', marketGroup);
     const fd = new FormData();
     fd.append('screenshot', file);
     fd.append('month_id', m.id);
+    fd.append('market_group', marketGroup);
     try {
         const r = await fetch('/api/extract', { method: 'POST', body: fd });
         const d = await r.json();
         if (!r.ok) throw new Error(d.error || 'Extraction failed');
         const mo = months.find(x => x.id === m.id);
-        mo.extracted          = d.extracted;
-        mo.screenshot_filename = d.filename;
-        setStatus('Extraction complete.', 'ok');
+        mo.extracted = { ...(mo.extracted || {}), ...d.extracted };
+        if (!mo.screenshot_filenames) mo.screenshot_filenames = { matn: null, ke: null, ng: null };
+        mo.screenshot_filenames[marketGroup] = d.filename;
+        setStatus('Extraction complete.', 'ok', marketGroup);
         renderMain();
     } catch (e) {
-        setStatus(e.message, 'error');
+        setStatus(e.message, 'error', marketGroup);
     }
 }
 
-function setStatus(msg, type) {
-    const el = document.getElementById('uploadStatus');
+function setStatus(msg, type, marketGroup) {
+    const el = document.getElementById(`uploadStatus_${marketGroup}`);
     if (el) { el.innerHTML = msg; el.className = `upload-status ${type}`; }
 }
 
 // ── Market card ───────────────────────────────────────────────────────────────
 function renderMarket(m, mkt, approved) {
-    const isMA  = mkt === 'ma';
-    const flag  = isMA ? '🇲🇦' : '🇹🇳';
-    const name  = isMA ? 'Morocco (MA)' : 'Tunisia (TN)';
-    const unit  = isMA ? '94.38 MAD / hr' : '27.60 TND / hr';
-    const cur   = isMA ? 'MAD' : 'TND';
+    const hasLCC    = mkt === 'tn' || mkt === 'ke';
+    const flag      = {ma:'🇲🇦', tn:'🇹🇳', ke:'🇰🇪', ng:'🇳🇬'}[mkt];
+    const name      = {ma:'Morocco (MA)', tn:'Tunisia (TN)', ke:'Kenya (KE)', ng:'Nigeria (NG)'}[mkt];
+    const unitLabel = {ma:'94.38 MAD', tn:'27.60 TND', ke:'585 KES', ng:'4,320 NGN'}[mkt];
+    const unit      = unitLabel + ' / hr';
+    const cur       = {ma:'MAD', tn:'TND', ke:'KES', ng:'NGN'}[mkt];
 
-    const ext     = m.extracted[mkt]  || {};
-    const inp     = m.inputs[mkt]     || {};
-    const calc    = m.calculated[mkt] || {};
-    const dlt     = m.delta[mkt];
+    const ext     = (m.extracted  || {})[mkt] || {};
+    const inp     = (m.inputs     || {})[mkt] || {};
+    const calc    = (m.calculated || {})[mkt] || {};
+    const dlt     = (m.delta      || {})[mkt];
     const showLBE = m.id >= '2026-04';
-    const dlt2    = (m.delta2 || {})[mkt];
+    const dlt2    = (m.delta2     || {})[mkt];
 
     const fv = v => (v === null || v === undefined)
         ? `<span class="fvalue nil">—</span>`
@@ -496,11 +526,11 @@ function renderMarket(m, mkt, approved) {
     const extBlock = `
         <div class="slabel">Extracted from invoice</div>
         <div class="frow"><span class="flabel">Invoiced prod. hours</span>${fv(ext.invoiced_prod_hours)}</div>
-        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${isMA ? '94.38 MAD' : '27.60 TND'} / hr</span></div>
+        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${unitLabel} / hr</span></div>
         <div class="frow"><span class="flabel">Prod. cost</span>${fv(ext.prod_cost)} <span style="font-size:11px;color:#484f58;margin-left:4px">${cur}</span></div>
         <div class="frow"><span class="flabel">Training cost</span>${fv(ext.training_cost)}</div>
-        ${!isMA ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(ext.lcc_cost)}</div>` : ''}
-        ${isMA
+        ${hasLCC ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(ext.lcc_cost)}</div>` : ''}
+        ${!hasLCC
             ? `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
                 ext.prod_cost != null && ext.training_cost != null
                     ? ext.prod_cost + ext.training_cost : null)}</div>`
@@ -532,7 +562,7 @@ function renderMarket(m, mkt, approved) {
             <div class="ig"><label>Bonus / Malus %</label>
                 <input type="number" step="0.01" id="${mkt}_bonus_malus_pct"
                     value="${inp.bonus_malus_pct ?? ''}" ${dis}></div>
-            ${!isMA ? `<div class="ig"><label>LCC hours</label>
+            ${hasLCC ? `<div class="ig"><label>LCC hours</label>
                 <input type="number" step="0.01" id="${mkt}_lcc_hours"
                     value="${inp.lcc_hours ?? ''}" ${dis}></div>` : ''}
         </div>`;
@@ -547,7 +577,7 @@ function renderMarket(m, mkt, approved) {
             <div class="ig"><label>LBE training hours</label>
                 <input type="number" step="0.01" id="${mkt}_lbe_training_hours"
                     value="${inp.lbe_training_hours ?? ''}" ${dis}></div>
-            ${!isMA ? `<div class="ig"><label>LBE LCC hours</label>
+            ${hasLCC ? `<div class="ig"><label>LBE LCC hours</label>
                 <input type="number" step="0.01" id="${mkt}_lbe_lcc_hours"
                     value="${inp.lbe_lcc_hours ?? ''}" ${dis}></div>` : ''}
             <div class="ig"><label>LBE Bonus / Malus amount</label>
@@ -559,11 +589,11 @@ function renderMarket(m, mkt, approved) {
     const calcBlock = `
         <div class="slabel">Calculated (from your inputs)</div>
         <div class="frow"><span class="flabel">Invoiced prod. hours</span>${fv(calc.invoiced_prod_hours)}</div>
-        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${isMA ? '94.38 MAD' : '27.60 TND'} / hr</span></div>
+        <div class="frow"><span class="flabel">Unit price</span><span class="fvalue">${unitLabel} / hr</span></div>
         <div class="frow"><span class="flabel">Prod. cost</span>${fv(calc.prod_cost)}</div>
         <div class="frow"><span class="flabel">Training cost</span>${fv(calc.training_cost)}</div>
-        ${!isMA ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(calc.lcc_cost)}</div>` : ''}
-        ${isMA
+        ${hasLCC ? `<div class="frow"><span class="flabel">LCC cost</span>${fv(calc.lcc_cost)}</div>` : ''}
+        ${!hasLCC
             ? `<div class="frow subtotal"><span class="flabel">Subtotal (prod + training)</span>${fv(
                 calc.prod_cost != null && calc.training_cost != null
                     ? calc.prod_cost + calc.training_cost : null)}</div>`
@@ -651,7 +681,19 @@ function collectInputs() {
                   lbe_prod_hours: showLBE ? g('tn_lbe_prod_hours') : null,
                   lbe_training_hours: showLBE ? g('tn_lbe_training_hours') : null,
                   lbe_lcc_hours: showLBE ? g('tn_lbe_lcc_hours') : null,
-                  lbe_bonus_malus_amount: showLBE ? g('tn_lbe_bonus_malus_amount') : null }
+                  lbe_bonus_malus_amount: showLBE ? g('tn_lbe_bonus_malus_amount') : null },
+            ke: { forecast: g('ke_forecast'), actual: g('ke_actual'),
+                  training_hours: g('ke_training_hours'), lcc_hours: g('ke_lcc_hours'),
+                  bonus_malus_pct: g('ke_bonus_malus_pct'),
+                  lbe_prod_hours: showLBE ? g('ke_lbe_prod_hours') : null,
+                  lbe_training_hours: showLBE ? g('ke_lbe_training_hours') : null,
+                  lbe_lcc_hours: showLBE ? g('ke_lbe_lcc_hours') : null,
+                  lbe_bonus_malus_amount: showLBE ? g('ke_lbe_bonus_malus_amount') : null },
+            ng: { forecast: g('ng_forecast'), actual: g('ng_actual'),
+                  training_hours: g('ng_training_hours'), bonus_malus_pct: g('ng_bonus_malus_pct'),
+                  lbe_prod_hours: showLBE ? g('ng_lbe_prod_hours') : null,
+                  lbe_training_hours: showLBE ? g('ng_lbe_training_hours') : null,
+                  lbe_bonus_malus_amount: showLBE ? g('ng_lbe_bonus_malus_amount') : null }
         }
     };
 }
@@ -673,7 +715,7 @@ async function handleSave() {
         m.inputs     = body.inputs;
         m.calculated = d.calculated;
         m.delta      = d.delta;
-        m.delta2     = d.delta2 || { ma: null, tn: null };
+        m.delta2     = d.delta2 || { ma: null, tn: null, ke: null, ng: null };
         renderMain();
     } catch (e) {
         showError(e.message);
@@ -684,7 +726,8 @@ async function handleSave() {
 // ── Approve ───────────────────────────────────────────────────────────────────
 async function handleApprove() {
     const m = months.find(x => x.id === activeId);
-    if (!m || m.delta.ma !== 0 || m.delta.tn !== 0) return;
+    const _dke = (m.delta || {}).ke, _dng = (m.delta || {}).ng;
+    if (!m || m.delta.ma !== 0 || m.delta.tn !== 0 || _dke !== 0 || _dng !== 0) return;
     const btn = document.getElementById('btnApprove');
     if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
     hideError();
@@ -697,17 +740,22 @@ async function handleApprove() {
         if (d.next_month_id && !months.find(x => x.id === d.next_month_id)) {
             months.push({
                 id: d.next_month_id, label: monthLabel(d.next_month_id),
-                status: 'open', approved_at: null, screenshot_filename: null,
-                extracted: { ma: {}, tn: {} },
+                status: 'open', approved_at: null,
+                screenshot_filenames: { matn: null, ke: null, ng: null },
+                extracted: { ma: {}, tn: {}, ke: {}, ng: {} },
                 inputs: {
                     ma: { forecast: null, actual: null, training_hours: null, bonus_malus_pct: null,
                           lbe_prod_hours: null, lbe_training_hours: null, lbe_bonus_malus_amount: null },
                     tn: { forecast: null, actual: null, training_hours: null, lcc_hours: null, bonus_malus_pct: null,
-                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null }
+                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null },
+                    ke: { forecast: null, actual: null, training_hours: null, lcc_hours: null, bonus_malus_pct: null,
+                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null },
+                    ng: { forecast: null, actual: null, training_hours: null, bonus_malus_pct: null,
+                          lbe_prod_hours: null, lbe_training_hours: null, lbe_bonus_malus_amount: null }
                 },
-                calculated: { ma: {}, tn: {} },
-                delta: { ma: null, tn: null },
-                delta2: { ma: null, tn: null }
+                calculated: { ma: {}, tn: {}, ke: {}, ng: {} },
+                delta: { ma: null, tn: null, ke: null, ng: null },
+                delta2: { ma: null, tn: null, ke: null, ng: null }
             });
             activeId = d.next_month_id;
         }

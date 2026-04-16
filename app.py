@@ -23,6 +23,8 @@ client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 MA_UNIT_PRICE = 94.38   # MAD
 TN_UNIT_PRICE = 27.6    # TND
+KE_UNIT_PRICE = 585     # KES
+NG_UNIT_PRICE = 4320    # NGN
 
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 
@@ -64,17 +66,21 @@ def make_month_obj(month_id):
         "label": make_month_label(month_id),
         "status": "open",
         "approved_at": None,
-        "screenshot_filename": None,
-        "extracted": {"ma": {}, "tn": {}},
+        "screenshot_filenames": {"matn": None, "ke": None, "ng": None},
+        "extracted": {"ma": {}, "tn": {}, "ke": {}, "ng": {}},
         "inputs": {
             "ma": {"forecast": None, "actual": None, "training_hours": None, "bonus_malus_pct": None,
                    "lbe_prod_hours": None, "lbe_training_hours": None, "lbe_bonus_malus_amount": None},
             "tn": {"forecast": None, "actual": None, "training_hours": None, "lcc_hours": None, "bonus_malus_pct": None,
-                   "lbe_prod_hours": None, "lbe_training_hours": None, "lbe_lcc_hours": None, "lbe_bonus_malus_amount": None}
+                   "lbe_prod_hours": None, "lbe_training_hours": None, "lbe_lcc_hours": None, "lbe_bonus_malus_amount": None},
+            "ke": {"forecast": None, "actual": None, "training_hours": None, "lcc_hours": None, "bonus_malus_pct": None,
+                   "lbe_prod_hours": None, "lbe_training_hours": None, "lbe_lcc_hours": None, "lbe_bonus_malus_amount": None},
+            "ng": {"forecast": None, "actual": None, "training_hours": None, "bonus_malus_pct": None,
+                   "lbe_prod_hours": None, "lbe_training_hours": None, "lbe_bonus_malus_amount": None}
         },
-        "calculated": {"ma": {}, "tn": {}},
-        "delta": {"ma": None, "tn": None},
-        "delta2": {"ma": None, "tn": None}
+        "calculated": {"ma": {}, "tn": {}, "ke": {}, "ng": {}},
+        "delta": {"ma": None, "tn": None, "ke": None, "ng": None},
+        "delta2": {"ma": None, "tn": None, "ke": None, "ng": None}
     }
 
 
@@ -93,7 +99,7 @@ def calculate_market(inputs, unit_price, market):
     actual   = inputs.get('actual')
     training = inputs.get('training_hours')
     bm_pct   = inputs.get('bonus_malus_pct')
-    lcc      = inputs.get('lcc_hours', 0) if market == 'tn' else 0
+    lcc      = inputs.get('lcc_hours', 0) if market in ('tn', 'ke') else 0
 
     if any(v is None for v in [forecast, actual, training, bm_pct]):
         return None
@@ -128,7 +134,7 @@ def calculate_lbe_delta(inputs, calc, unit_price, market):
     """Informational delta: my inputs total vs LBE total. Never blocks approval."""
     lbe_prod     = inputs.get('lbe_prod_hours')
     lbe_training = inputs.get('lbe_training_hours')
-    lbe_lcc      = inputs.get('lbe_lcc_hours', 0) if market == 'tn' else 0
+    lbe_lcc      = inputs.get('lbe_lcc_hours', 0) if market in ('tn', 'ke') else 0
     lbe_bm_amount = inputs.get('lbe_bonus_malus_amount')
 
     if lbe_prod is None or lbe_training is None:
@@ -154,9 +160,9 @@ def calculate_lbe_delta(inputs, calc, unit_price, market):
 
 # ── Claude Vision extraction ───────────────────────────────────────────────────
 
-EXTRACT_SYSTEM = """You are an invoice data extraction assistant for a BPO/contact-centre invoicing system. The user provides a screenshot of a monthly invoice containing figures for two markets: MA (Morocco) and TN (Tunisia).
+EXTRACT_SYSTEM_MATN = """You are an invoice data extraction assistant. Extract MA (Morocco) and TN (Tunisia) invoice data from this screenshot.
 
-Extract all numeric fields and return ONLY valid JSON with no markdown, no extra text, in this exact shape:
+Return ONLY valid JSON with no markdown, no extra text:
 {
   "ma": {
     "invoiced_prod_hours": <number or null>,
@@ -165,7 +171,7 @@ Extract all numeric fields and return ONLY valid JSON with no markdown, no extra
     "training_cost": <number or null>,
     "lcc_hours": 0,
     "lcc_cost": 0,
-    "bonus_malus_pct": <number or null>,
+    "bonus_malus_pct": <positive bonus / negative malus, number or null>,
     "bonus_malus_amount": <number or null>,
     "total": <number or null>
   },
@@ -176,20 +182,75 @@ Extract all numeric fields and return ONLY valid JSON with no markdown, no extra
     "training_cost": <number or null>,
     "lcc_hours": <number or null>,
     "lcc_cost": <number or null>,
-    "bonus_malus_pct": <number or null>,
+    "bonus_malus_pct": <positive bonus / negative malus, number or null>,
     "bonus_malus_amount": <number or null>,
     "total": <number or null>
   }
 }
 
 Rules:
-- bonus_malus_pct: positive number for bonus, negative for malus (e.g. 2.5 or -1.5)
+- bonus_malus_pct: positive for bonus, negative for malus (e.g. 2.5 or -1.5)
 - All monetary values: plain numbers without currency symbols
-- Use null for any field you cannot confidently read from the screenshot
-- lcc_hours and lcc_cost are 0 for MA (Morocco does not have the LCC role)"""
+- lcc_hours and lcc_cost are always 0 for MA
+- Use null for any field you cannot confidently read"""
+
+EXTRACT_SYSTEM_KE = """You are an invoice data extraction assistant. Extract Kenya (KE) invoice data from this screenshot.
+
+Return ONLY valid JSON with no markdown, no extra text:
+{
+  "ke": {
+    "invoiced_prod_hours": <CS full time hours, number or null>,
+    "prod_cost": <number or null>,
+    "training_hours": <sum of New hire/T1 hours AND Ongoing training hours, number or null>,
+    "training_cost": <number or null>,
+    "lcc_hours": <number or null>,
+    "lcc_cost": <number or null>,
+    "bonus_malus_pct": <positive bonus / negative malus, number or null>,
+    "bonus_malus_amount": <number or null>,
+    "total": <number or null>
+  }
+}
+
+Rules:
+- invoiced_prod_hours: look for "CS full time" hours
+- training_hours: add New hire training (T1) hours + Ongoing training hours together
+- bonus_malus_pct: positive for bonus, negative for malus
+- All monetary values: plain numbers without currency symbols
+- Use null for any field you cannot confidently read"""
+
+EXTRACT_SYSTEM_NG = """You are an invoice data extraction assistant. Extract Nigeria (NG) invoice data from this screenshot.
+
+Return ONLY valid JSON with no markdown, no extra text:
+{
+  "ng": {
+    "invoiced_prod_hours": <number or null>,
+    "prod_cost": <total subtotal of production, number or null>,
+    "training_hours": <number or null>,
+    "training_cost": <Training/nexting subtotal, number or null>,
+    "lcc_hours": 0,
+    "lcc_cost": 0,
+    "bonus_malus_pct": <positive bonus / negative malus, number or null>,
+    "bonus_malus_amount": <number or null>,
+    "total": <number or null>
+  }
+}
+
+Rules:
+- prod_cost: from "total subtotal of production"
+- training_cost: from "Training/nexting subtotal"
+- bonus_malus_pct: positive for bonus, negative for malus
+- lcc_hours and lcc_cost are always 0 for NG
+- All monetary values: plain numbers without currency symbols
+- Use null for any field you cannot confidently read"""
+
+_EXTRACT_SYSTEMS = {
+    'matn': EXTRACT_SYSTEM_MATN,
+    'ke':   EXTRACT_SYSTEM_KE,
+    'ng':   EXTRACT_SYSTEM_NG,
+}
 
 
-def extract_invoice(image_path):
+def extract_invoice(image_path, market_group):
     ext = os.path.splitext(image_path)[1].lower()
     media_map = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                  '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp'}
@@ -201,12 +262,12 @@ def extract_invoice(image_path):
     message = client.messages.create(
         model='claude-haiku-4-5-20251001',
         max_tokens=1024,
-        system=EXTRACT_SYSTEM,
+        system=_EXTRACT_SYSTEMS[market_group],
         messages=[{
             "role": "user",
             "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_data}},
-                {"type": "text", "text": "Extract all invoice figures for MA and TN markets from this screenshot."}
+                {"type": "text", "text": "Extract all invoice figures from this screenshot."}
             ]
         }]
     )
@@ -236,10 +297,14 @@ def api_extract():
     if 'screenshot' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
 
-    file     = request.files['screenshot']
-    month_id = request.form.get('month_id')
+    file         = request.files['screenshot']
+    month_id     = request.form.get('month_id')
+    market_group = request.form.get('market_group', 'matn')
+
     if not month_id:
         return jsonify({'error': 'month_id required'}), 400
+    if market_group not in ('matn', 'ke', 'ng'):
+        return jsonify({'error': 'Invalid market_group'}), 400
 
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -255,20 +320,27 @@ def api_extract():
     if month['status'] == 'approved':
         return jsonify({'error': 'Month is already approved'}), 400
 
-    filename  = f"{month_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filename  = f"{month_id}_{market_group}_{uuid.uuid4().hex[:8]}{ext}"
     save_path = os.path.join(UPLOADS_DIR, filename)
     file.save(save_path)
 
     try:
-        extracted = extract_invoice(save_path)
+        extracted = extract_invoice(save_path, market_group)
     except Exception as e:
         return jsonify({'error': f'Extraction failed: {e}'}), 500
 
-    month['screenshot_filename'] = filename
-    month['extracted']           = extracted
-    save_months(months)
+    # Migrate old screenshot_filename format if needed
+    if 'screenshot_filenames' not in month:
+        month['screenshot_filenames'] = {'matn': month.get('screenshot_filename'), 'ke': None, 'ng': None}
+    month['screenshot_filenames'][market_group] = filename
 
-    return jsonify({'extracted': extracted, 'filename': filename})
+    # Merge extracted markets into existing extracted data
+    if 'extracted' not in month:
+        month['extracted'] = {'ma': {}, 'tn': {}, 'ke': {}, 'ng': {}}
+    month['extracted'].update(extracted)
+
+    save_months(months)
+    return jsonify({'extracted': extracted, 'filename': filename, 'market_group': market_group})
 
 
 @app.route('/api/save/<month_id>', methods=['POST'])
@@ -288,9 +360,13 @@ def api_save(month_id):
 
     calc_ma = calculate_market(month['inputs']['ma'], MA_UNIT_PRICE, 'ma')
     calc_tn = calculate_market(month['inputs']['tn'], TN_UNIT_PRICE, 'tn')
+    calc_ke = calculate_market(month['inputs'].get('ke', {}), KE_UNIT_PRICE, 'ke')
+    calc_ng = calculate_market(month['inputs'].get('ng', {}), NG_UNIT_PRICE, 'ng')
 
     month['calculated']['ma'] = calc_ma or {}
     month['calculated']['tn'] = calc_tn or {}
+    month['calculated']['ke'] = calc_ke or {}
+    month['calculated']['ng'] = calc_ng or {}
 
     def delta(extracted, calculated):
         ext_t  = (extracted or {}).get('total')
@@ -301,11 +377,15 @@ def api_save(month_id):
 
     month['delta']['ma'] = delta(month['extracted'].get('ma'), calc_ma)
     month['delta']['tn'] = delta(month['extracted'].get('tn'), calc_tn)
+    month['delta']['ke'] = delta(month['extracted'].get('ke'), calc_ke)
+    month['delta']['ng'] = delta(month['extracted'].get('ng'), calc_ng)
 
     if 'delta2' not in month:
-        month['delta2'] = {'ma': None, 'tn': None}
+        month['delta2'] = {'ma': None, 'tn': None, 'ke': None, 'ng': None}
     month['delta2']['ma'] = calculate_lbe_delta(month['inputs']['ma'], calc_ma, MA_UNIT_PRICE, 'ma')
     month['delta2']['tn'] = calculate_lbe_delta(month['inputs']['tn'], calc_tn, TN_UNIT_PRICE, 'tn')
+    month['delta2']['ke'] = calculate_lbe_delta(month['inputs'].get('ke', {}), calc_ke, KE_UNIT_PRICE, 'ke')
+    month['delta2']['ng'] = calculate_lbe_delta(month['inputs'].get('ng', {}), calc_ng, NG_UNIT_PRICE, 'ng')
 
     save_months(months)
     return jsonify({'calculated': month['calculated'], 'delta': month['delta'], 'delta2': month['delta2']})
@@ -319,8 +399,9 @@ def api_approve(month_id):
         return jsonify({'error': 'Month not found'}), 404
     if month['status'] == 'approved':
         return jsonify({'error': 'Already approved'}), 400
-    if month['delta']['ma'] != 0 or month['delta']['tn'] != 0:
-        return jsonify({'error': 'Cannot approve: deltas are not zero'}), 400
+    all_deltas = [month['delta'].get(mkt) for mkt in ['ma', 'tn', 'ke', 'ng']]
+    if any(d is None or d != 0 for d in all_deltas):
+        return jsonify({'error': 'Cannot approve: all market deltas must be zero'}), 400
 
     month['status']      = 'approved'
     month['approved_at'] = datetime.utcnow().isoformat() + 'Z'
