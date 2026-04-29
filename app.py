@@ -287,16 +287,6 @@ def index():
     return response
 
 
-@app.route('/api/debug-key')
-def debug_key():
-    key = os.getenv('ANTHROPIC_API_KEY', '')
-    return jsonify({
-        'length': len(key),
-        'starts_with': key[:15] if key else '',
-        'ends_with': key[-6:] if key else '',
-        'is_empty': key == ''
-    })
-
 
 @app.route('/api/months')
 def api_months():
