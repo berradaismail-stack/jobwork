@@ -9,7 +9,7 @@ from flask import Flask, render_template, jsonify, request, make_response, send_
 from dotenv import load_dotenv
 import anthropic
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 app = Flask(__name__)
 
@@ -285,6 +285,17 @@ def index():
     response = make_response(render_template('index.html'))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
+
+
+@app.route('/api/debug-key')
+def debug_key():
+    key = os.getenv('ANTHROPIC_API_KEY', '')
+    return jsonify({
+        'length': len(key),
+        'starts_with': key[:15] if key else '',
+        'ends_with': key[-6:] if key else '',
+        'is_empty': key == ''
+    })
 
 
 @app.route('/api/months')
