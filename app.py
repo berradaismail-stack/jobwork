@@ -95,19 +95,31 @@ def read_cell(sheets, spreadsheet_id, tab, cell):
 
 def find_productive_hours_total(ws):
     """Find Total Hub row in the Productive Hours sub-table."""
-    prod_row = None
-    for row in ws.iter_rows():
-        for cell in row:
-            val = str(cell.value or '').lower()
-            if 'productive' in val and 'hour' in val:
-                prod_row = cell.row
-            if prod_row and cell.row > prod_row and 'total' in val and 'hub' in val:
-                d_val = ws.cell(row=cell.row, column=4).value
-                if d_val is not None and d_val != '':
-                    try:
-                        return float(str(d_val).replace(',', '').replace(' ', ''))
-                    except (ValueError, TypeError):
-                        pass
+    prod_section_found = False
+    for row_cells in ws.iter_rows():
+        row_vals = {}
+        for cell in row_cells:
+            try:
+                if cell.column is not None:
+                    row_vals[cell.column] = cell.value
+            except Exception:
+                pass
+
+        for v in row_vals.values():
+            sv = str(v or '').lower()
+            if 'productive' in sv and 'hour' in sv:
+                prod_section_found = True
+
+        if prod_section_found:
+            for v in row_vals.values():
+                sv = str(v or '').lower()
+                if 'total' in sv and 'hub' in sv:
+                    d_val = row_vals.get(4)
+                    if d_val not in (None, ''):
+                        try:
+                            return float(str(d_val).replace(',', '').replace(' ', ''))
+                        except (ValueError, TypeError):
+                            pass
     return None
 
 
