@@ -412,17 +412,17 @@ function renderMain() {
     if (!approved) {
         const dke = (m.delta || {}).ke;
         const dng = (m.delta || {}).ng;
-        const bothZero = m.delta.ma === 0 && m.delta.tn === 0 && dke === 0 && dng === 0;
-        const pending  = m.delta.ma === null || m.delta.tn === null || dke == null || dng == null;
+        const pending   = m.delta.ma === null || m.delta.tn === null || dke == null || dng == null;
+        const allValid  = !pending && m.delta.ma <= 0 && m.delta.tn <= 0 && dke <= 0 && dng <= 0;
         const hint = pending
             ? 'Upload the invoice screenshot and fill all input fields, then click Save.'
-            : (!bothZero ? 'All four market deltas must equal 0 before approving.' : '');
+            : (!allValid ? 'Invoiced amount exceeds calculated amount for one or more markets.' : '');
 
         html += `<div class="action-bar">
             <button class="btn btn-sync" id="btnSync" onclick="handleSyncForecast()">⬇ Sync Forecast from Drive</button>
             <button class="btn btn-save" id="btnSave" onclick="handleSave()">Calculate &amp; Save</button>
             <button class="btn btn-approve" id="btnApprove" onclick="handleApprove()"
-                ${bothZero ? '' : 'disabled'}>Approve Month</button>
+                ${allValid ? '' : 'disabled'}>Approve Month</button>
             ${hint ? `<div class="action-hint">${hint}</div>` : ''}
         </div>`;
     }
@@ -620,11 +620,12 @@ function renderMarket(m, mkt, approved) {
     let dClass = 'pending', dVal = '—';
     if (dlt === null || dlt === undefined) {
         dClass = 'pending';
-    } else if (dlt === 0) {
-        dClass = 'zero'; dVal = `0.00 ${cur}`;
+    } else if (dlt <= 0) {
+        dClass = 'zero';
+        dVal = dlt === 0 ? `0.00 ${cur}` : `${fmt(dlt)} ${cur}`;
     } else {
         dClass = 'nonzero';
-        dVal = `${dlt > 0 ? '+' : ''}${fmt(dlt)} ${cur}`;
+        dVal = `+${fmt(dlt)} ${cur}`;
     }
 
     const deltaBlock = `
@@ -758,7 +759,7 @@ async function handleSave() {
 async function handleApprove() {
     const m = months.find(x => x.id === activeId);
     const _dke = (m.delta || {}).ke, _dng = (m.delta || {}).ng;
-    if (!m || m.delta.ma !== 0 || m.delta.tn !== 0 || _dke !== 0 || _dng !== 0) return;
+    if (!m || m.delta.ma > 0 || m.delta.tn > 0 || _dke > 0 || _dng > 0) return;
     const btn = document.getElementById('btnApprove');
     if (btn) { btn.disabled = true; btn.textContent = 'Approving…'; }
     hideError();

@@ -592,8 +592,8 @@ def api_approve(month_id):
     if month['status'] == 'approved':
         return jsonify({'error': 'Already approved'}), 400
     all_deltas = [month['delta'].get(mkt) for mkt in ['ma', 'tn', 'ke', 'ng']]
-    if any(d is None or d != 0 for d in all_deltas):
-        return jsonify({'error': 'Cannot approve: all market deltas must be zero'}), 400
+    if any(d is None or d > 0 for d in all_deltas):
+        return jsonify({'error': 'Cannot approve: invoiced amount exceeds calculated amount for one or more markets'}), 400
 
     month['status']      = 'approved'
     month['approved_at'] = datetime.utcnow().isoformat() + 'Z'
