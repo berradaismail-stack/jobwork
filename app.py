@@ -33,7 +33,7 @@ NG_UNIT_PRICE = 4320    # NGN
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 
 FORECAST_FOLDER_ID = '1QxiOThdpiDr52HN011w2mPuByYT_OBQZ'
-FORECAST_TAB       = 'Hub forecast review'
+FORECAST_TAB       = 'Hub Forecast Review'
 FORECAST_CELL      = 'D63'
 
 # ── Google Drive / Sheets helpers ──────────────────────────────────────────────
@@ -98,9 +98,11 @@ def read_cell_xlsx(drive, file_id, tab, cell):
     try:
         content = drive.files().get_media(fileId=file_id).execute()
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        if tab not in wb.sheetnames:
+        # Case-insensitive tab match
+        sheet_name = next((s for s in wb.sheetnames if s.lower() == tab.lower()), None)
+        if sheet_name is None:
             return None
-        val = wb[tab][cell].value
+        val = wb[sheet_name][cell].value
         return float(str(val).replace(',', '').replace(' ', '')) if val is not None else None
     except Exception:
         pass
