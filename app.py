@@ -123,15 +123,14 @@ def find_productive_hours_total(ws):
     return None
 
 
-def read_cell_xlsx(drive, file_id, tab, cell):
+def read_cell_xlsx(drive, file_id, tab):
     try:
         content = drive.files().get_media(fileId=file_id).execute()
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         sheet_name = next((s for s in wb.sheetnames if s.lower() == tab.lower()), None)
         if sheet_name is None:
             return None
-        val = find_productive_hours_total(wb[sheet_name])
-        return val
+        return find_productive_hours_total(wb[sheet_name])
     except Exception:
         pass
     return None
@@ -177,7 +176,7 @@ def sync_forecast_from_drive(month_id):
             if info['mime'] == GSHEET_MIME:
                 val = read_cell(sheets, info['id'], FORECAST_TAB, FORECAST_CELL)
             else:
-                val = read_cell_xlsx(drive, info['id'], FORECAST_TAB, FORECAST_CELL)
+                val = read_cell_xlsx(drive, info['id'], FORECAST_TAB)
             if val is not None:
                 total += val
                 found = True
