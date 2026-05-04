@@ -189,9 +189,21 @@ def sync_forecast_from_drive(month_id):
 
 def load_months():
     if not os.path.exists(DATA_FILE):
-        return [make_month_obj(today_month_id())]
-    with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+        months = []
+    else:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            months = json.load(f)
+
+    # Always ensure all 12 months of the current year exist
+    current_year = date.today().year
+    existing_ids = {m['id'] for m in months}
+    for mon in range(1, 13):
+        month_id = f"{current_year:04d}-{mon:02d}"
+        if month_id not in existing_ids:
+            months.append(make_month_obj(month_id))
+
+    months.sort(key=lambda m: m['id'])
+    return months
 
 
 def save_months(months):
@@ -586,12 +598,8 @@ def api_approve(month_id):
     month['status']      = 'approved'
     month['approved_at'] = datetime.utcnow().isoformat() + 'Z'
 
-    next_id = next_month_id(month_id)
-    if not get_month(months, next_id):
-        months.append(make_month_obj(next_id))
-
     save_months(months)
-    return jsonify({'status': 'approved', 'next_month_id': next_id})
+    return jsonify({'status': 'approved'})
 
 
 @app.route('/api/screenshot/<filename>')

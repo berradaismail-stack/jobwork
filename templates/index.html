@@ -768,28 +768,6 @@ async function handleApprove() {
         if (!r.ok) throw new Error(d.error || 'Approval failed');
         m.status      = 'approved';
         m.approved_at = new Date().toISOString();
-        if (d.next_month_id && !months.find(x => x.id === d.next_month_id)) {
-            months.push({
-                id: d.next_month_id, label: monthLabel(d.next_month_id),
-                status: 'open', approved_at: null,
-                screenshot_filenames: { matn: null, ke: null, ng: null },
-                extracted: { ma: {}, tn: {}, ke: {}, ng: {} },
-                inputs: {
-                    ma: { forecast: null, actual: null, training_hours: null, bonus_malus_pct: null,
-                          lbe_prod_hours: null, lbe_training_hours: null, lbe_bonus_malus_amount: null },
-                    tn: { forecast: null, actual: null, training_hours: null, lcc_hours: null, bonus_malus_pct: null,
-                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null },
-                    ke: { forecast: null, actual: null, training_hours: null, lcc_hours: null, bonus_malus_pct: null,
-                          lbe_prod_hours: null, lbe_training_hours: null, lbe_lcc_hours: null, lbe_bonus_malus_amount: null },
-                    ng: { forecast: null, actual: null, training_hours: null, bonus_malus_pct: null,
-                          lbe_prod_hours: null, lbe_training_hours: null, lbe_bonus_malus_amount: null }
-                },
-                calculated: { ma: {}, tn: {}, ke: {}, ng: {} },
-                delta: { ma: null, tn: null, ke: null, ng: null },
-                delta2: { ma: null, tn: null, ke: null, ng: null }
-            });
-            activeId = d.next_month_id;
-        }
         renderTabs();
         renderMain();
     } catch (e) {
