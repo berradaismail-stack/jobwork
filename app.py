@@ -448,6 +448,48 @@ def api_extract():
     return jsonify({'extracted': extracted, 'filename': filename, 'market_group': market_group})
 
 
+@app.route('/api/debug-drive/<month_id>')
+def api_debug_drive(month_id):
+    try:
+        year, month_num = month_id.split('-')
+        drive, _ = get_google_services()
+
+        # List root folders
+        root_folders = drive.files().list(
+            q=f"'{FORECAST_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            fields='files(id, name)'
+        ).execute().get('files', [])
+
+        year_folder_id = find_subfolder(drive, FORECAST_FOLDER_ID, year)
+        month_folders = []
+        month_files = []
+
+        if year_folder_id:
+            month_folders = drive.files().list(
+                q=f"'{year_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                fields='files(id, name)'
+            ).execute().get('files', [])
+
+            # Also check month folder if found
+            month_name_str = month_name[int(month_num)]
+            month_folder_id = find_subfolder(drive, year_folder_id, month_name_str) or \
+                              find_subfolder(drive, year_folder_id, month_num)
+            if month_folder_id:
+                month_files = drive.files().list(
+                    q=f"'{month_folder_id}' in parents and trashed=false",
+                    fields='files(id, name, mimeType)'
+                ).execute().get('files', [])
+
+        return jsonify({
+            'root_folders': [f['name'] for f in root_folders],
+            'year_folder_found': year_folder_id is not None,
+            'month_folders': [f['name'] for f in month_folders],
+            'files_in_month_folder': [{'name': f['name'], 'type': f['mimeType']} for f in month_files]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/sync-forecast/<month_id>', methods=['POST'])
 def api_sync_forecast(month_id):
     months = load_months()
