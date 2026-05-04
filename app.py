@@ -34,7 +34,6 @@ ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 
 FORECAST_FOLDER_ID = '1QxiOThdpiDr52HN011w2mPuByYT_OBQZ'
 FORECAST_TAB       = 'Hub Forecast Review'
-FORECAST_CELL      = 'D63'
 
 # ── Google Drive / Sheets helpers ──────────────────────────────────────────────
 
@@ -94,16 +93,33 @@ def read_cell(sheets, spreadsheet_id, tab, cell):
     return None
 
 
+def find_productive_hours_total(ws):
+    """Find Total Hub row in the Productive Hours sub-table."""
+    prod_row = None
+    for row in ws.iter_rows():
+        for cell in row:
+            val = str(cell.value or '').lower()
+            if 'productive' in val and 'hour' in val:
+                prod_row = cell.row
+            if prod_row and cell.row > prod_row and 'total' in val and 'hub' in val:
+                d_val = ws.cell(row=cell.row, column=4).value
+                if d_val is not None and d_val != '':
+                    try:
+                        return float(str(d_val).replace(',', '').replace(' ', ''))
+                    except (ValueError, TypeError):
+                        pass
+    return None
+
+
 def read_cell_xlsx(drive, file_id, tab, cell):
     try:
         content = drive.files().get_media(fileId=file_id).execute()
         wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        # Case-insensitive tab match
         sheet_name = next((s for s in wb.sheetnames if s.lower() == tab.lower()), None)
         if sheet_name is None:
             return None
-        val = wb[sheet_name][cell].value
-        return float(str(val).replace(',', '').replace(' ', '')) if val is not None else None
+        val = find_productive_hours_total(wb[sheet_name])
+        return val
     except Exception:
         pass
     return None
@@ -499,24 +515,13 @@ def api_debug_drive(month_id):
                 tab_names = wb.sheetnames
                 cell_val = None
                 sheet_name = next((s for s in tab_names if s.lower() == FORECAST_TAB.lower()), None)
-                matches = []
+                val = None
                 if sheet_name:
-                    ws = wb[sheet_name]
-                    for row in ws.iter_rows():
-                        for cell in row:
-                            if cell.value and 'total' in str(cell.value).lower() and 'hub' in str(cell.value).lower():
-                                # Get value in column D of same row
-                                d_cell = ws.cell(row=cell.row, column=4).value
-                                matches.append({
-                                    'label': str(cell.value),
-                                    'label_cell': cell.coordinate,
-                                    'row': cell.row,
-                                    'D_value': str(d_cell)
-                                })
+                    val = find_productive_hours_total(wb[sheet_name])
                 results.append({
                     'name': f['name'],
                     'target_tab_found': sheet_name is not None,
-                    'total_hub_matches': matches
+                    'productive_hours_total': val
                 })
             except Exception as e:
                 results.append({'name': f['name'], 'error': str(e)})
