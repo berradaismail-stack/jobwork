@@ -8,6 +8,8 @@ from calendar import month_name
 from flask import Flask, render_template, jsonify, request, make_response, send_from_directory
 from dotenv import load_dotenv
 import anthropic
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
@@ -27,6 +29,108 @@ KE_UNIT_PRICE = 585     # KES
 NG_UNIT_PRICE = 4320    # NGN
 
 ALLOWED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+
+FORECAST_FOLDER_ID = '1QxiOThdpiDr52HN011w2mPuByYT_OBQZ'
+FORECAST_TAB       = 'Hub forecast review'
+FORECAST_CELL      = 'D63'
+
+# ── Google Drive / Sheets helpers ──────────────────────────────────────────────
+
+def get_google_services():
+    sa_json = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON', '')
+    if not sa_json:
+        raise ValueError('GOOGLE_SERVICE_ACCOUNT_JSON not configured')
+    sa_info = json.loads(sa_json)
+    creds = service_account.Credentials.from_service_account_info(
+        sa_info,
+        scopes=[
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+        ]
+    )
+    drive   = build('drive',  'v3', credentials=creds)
+    sheets  = build('sheets', 'v4', credentials=creds)
+    return drive, sheets
+
+
+def find_subfolder(drive, parent_id, keyword):
+    res = drive.files().list(
+        q=f"'{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        fields='files(id, name)'
+    ).execute()
+    kw = keyword.lower()
+    for f in res.get('files', []):
+        if kw in f['name'].lower():
+            return f['id']
+    return None
+
+
+def list_sheets_in_folder(drive, folder_id):
+    res = drive.files().list(
+        q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+        fields='files(id, name)'
+    ).execute()
+    return res.get('files', [])
+
+
+def read_cell(sheets, spreadsheet_id, tab, cell):
+    try:
+        res = sheets.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"'{tab}'!{cell}"
+        ).execute()
+        vals = res.get('values', [])
+        if vals and vals[0]:
+            return float(str(vals[0][0]).replace(',', '').replace(' ', ''))
+    except Exception:
+        pass
+    return None
+
+
+def sync_forecast_from_drive(month_id):
+    year, month_num = month_id.split('-')
+    month_name_str  = month_name[int(month_num)]   # e.g. "April"
+
+    drive, sheets = get_google_services()
+
+    year_folder_id = find_subfolder(drive, FORECAST_FOLDER_ID, year)
+    if not year_folder_id:
+        raise ValueError(f'Year folder "{year}" not found in Drive')
+
+    month_folder_id = find_subfolder(drive, year_folder_id, month_name_str)
+    if not month_folder_id:
+        month_folder_id = find_subfolder(drive, year_folder_id, month_num)
+    if not month_folder_id:
+        raise ValueError(f'Month folder for "{month_name_str} {year}" not found in Drive')
+
+    all_sheets = list_sheets_in_folder(drive, month_folder_id)
+    if not all_sheets:
+        raise ValueError(f'No sheets found in Drive for {month_name_str} {year}')
+
+    # Group sheets by market code found in filename
+    market_sheets = {'ma': [], 'tn': [], 'ke': [], 'ng': []}
+    for s in all_sheets:
+        name_up = s['name'].upper()
+        for mkt in ['MA', 'TN', 'KE', 'NG']:
+            if mkt in name_up:
+                market_sheets[mkt.lower()].append(s['id'])
+
+    # Read D63 from "Hub forecast review" tab; sum if multiple sheets (KE/NG verticals)
+    forecasts = {}
+    for mkt, ids in market_sheets.items():
+        if not ids:
+            continue
+        total = 0.0
+        found = False
+        for sid in ids:
+            val = read_cell(sheets, sid, FORECAST_TAB, FORECAST_CELL)
+            if val is not None:
+                total += val
+                found = True
+        if found:
+            forecasts[mkt] = round(total, 2)
+
+    return forecasts
 
 # ── Data helpers ───────────────────────────────────────────────────────────────
 
@@ -342,6 +446,27 @@ def api_extract():
 
     save_months(months)
     return jsonify({'extracted': extracted, 'filename': filename, 'market_group': market_group})
+
+
+@app.route('/api/sync-forecast/<month_id>', methods=['POST'])
+def api_sync_forecast(month_id):
+    months = load_months()
+    month  = get_month(months, month_id)
+    if not month:
+        return jsonify({'error': 'Month not found'}), 404
+    if month['status'] == 'approved':
+        return jsonify({'error': 'Month is already approved'}), 400
+    try:
+        forecasts = sync_forecast_from_drive(month_id)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    if not forecasts:
+        return jsonify({'error': 'No forecast data found in Drive for this month'}), 404
+    for mkt, val in forecasts.items():
+        if mkt in month['inputs']:
+            month['inputs'][mkt]['forecast'] = val
+    save_months(months)
+    return jsonify({'forecasts': forecasts})
 
 
 @app.route('/api/save/<month_id>', methods=['POST'])

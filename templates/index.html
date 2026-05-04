@@ -313,6 +313,14 @@
         .btn-approve:hover:not(:disabled) { background: #2ea043; }
         .btn-approve:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
 
+        .btn-sync {
+            background: transparent;
+            color: #58a6ff;
+            border: 1px solid #58a6ff;
+        }
+        .btn-sync:hover:not(:disabled) { background: rgba(88,166,255,0.08); }
+        .btn-sync:disabled { color: #484f58; border-color: #30363d; cursor: not-allowed; }
+
         .action-hint { font-size: 12px; color: #6e7681; text-align: center; width: 100%; }
 
         /* ── Spinner ── */
@@ -411,6 +419,7 @@ function renderMain() {
             : (!bothZero ? 'All four market deltas must equal 0 before approving.' : '');
 
         html += `<div class="action-bar">
+            <button class="btn btn-sync" id="btnSync" onclick="handleSyncForecast()">⬇ Sync Forecast from Drive</button>
             <button class="btn btn-save" id="btnSave" onclick="handleSave()">Calculate &amp; Save</button>
             <button class="btn btn-approve" id="btnApprove" onclick="handleApprove()"
                 ${bothZero ? '' : 'disabled'}>Approve Month</button>
@@ -657,6 +666,28 @@ function renderMarket(m, mkt, approved) {
             ${d2Block}
         </div>
     </div>`;
+}
+
+// ── Sync Forecast from Drive ──────────────────────────────────────────────────
+async function handleSyncForecast() {
+    const btn = document.getElementById('btnSync');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Syncing…'; }
+    hideError();
+    try {
+        const r = await fetch(`/api/sync-forecast/${activeId}`, { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Sync failed');
+        const m = months.find(x => x.id === activeId);
+        if (m) {
+            for (const [mkt, val] of Object.entries(d.forecasts)) {
+                if (m.inputs[mkt]) m.inputs[mkt].forecast = val;
+            }
+        }
+        renderMain();
+    } catch (e) {
+        showError(e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '⬇ Sync Forecast from Drive'; }
+    }
 }
 
 // ── Save ──────────────────────────────────────────────────────────────────────
