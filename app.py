@@ -498,13 +498,21 @@ def api_debug_drive(month_id):
                 wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
                 tab_names = wb.sheetnames
                 cell_val = None
-                if FORECAST_TAB in wb.sheetnames:
-                    cell_val = str(wb[FORECAST_TAB][FORECAST_CELL].value)
+                sheet_name = next((s for s in tab_names if s.lower() == FORECAST_TAB.lower()), None)
+                if sheet_name:
+                    cell_val = str(wb[sheet_name][FORECAST_CELL].value)
+                    # Also try without data_only to detect formulas
+                    wb2 = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=False)
+                    cell_raw = str(wb2[sheet_name][FORECAST_CELL].value)
+                else:
+                    cell_raw = None
                 results.append({
                     'name': f['name'],
                     'tabs': tab_names,
-                    'target_tab_found': FORECAST_TAB in tab_names,
-                    'D63_value': cell_val
+                    'target_tab_found': sheet_name is not None,
+                    'D63_cached': cell_val,
+                    'D63_raw': cell_raw,
+                    'forecast_tab_constant': FORECAST_TAB
                 })
             except Exception as e:
                 results.append({'name': f['name'], 'error': str(e)})
