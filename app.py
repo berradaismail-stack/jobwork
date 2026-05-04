@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import anthropic
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import io
+import openpyxl
 
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
@@ -66,9 +68,14 @@ def find_subfolder(drive, parent_id, keyword):
 
 
 def list_sheets_in_folder(drive, folder_id):
+    mime_filter = (
+        "mimeType='application/vnd.google-apps.spreadsheet' or "
+        "mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' or "
+        "mimeType='application/vnd.ms-excel'"
+    )
     res = drive.files().list(
-        q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-        fields='files(id, name)'
+        q=f"'{folder_id}' in parents and ({mime_filter}) and trashed=false",
+        fields='files(id, name, mimeType)'
     ).execute()
     return res.get('files', [])
 
@@ -82,6 +89,19 @@ def read_cell(sheets, spreadsheet_id, tab, cell):
         vals = res.get('values', [])
         if vals and vals[0]:
             return float(str(vals[0][0]).replace(',', '').replace(' ', ''))
+    except Exception:
+        pass
+    return None
+
+
+def read_cell_xlsx(drive, file_id, tab, cell):
+    try:
+        content = drive.files().get_media(fileId=file_id).execute()
+        wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        if tab not in wb.sheetnames:
+            return None
+        val = wb[tab][cell].value
+        return float(str(val).replace(',', '').replace(' ', '')) if val is not None else None
     except Exception:
         pass
     return None
@@ -107,23 +127,27 @@ def sync_forecast_from_drive(month_id):
     if not all_sheets:
         raise ValueError(f'No sheets found in Drive for {month_name_str} {year}')
 
-    # Group sheets by market code found in filename
+    # Group sheets by market code — code must be at start of filename (e.g. "KE_", "MA_")
     market_sheets = {'ma': [], 'tn': [], 'ke': [], 'ng': []}
     for s in all_sheets:
         name_up = s['name'].upper()
         for mkt in ['MA', 'TN', 'KE', 'NG']:
-            if mkt in name_up:
-                market_sheets[mkt.lower()].append(s['id'])
+            if name_up.startswith(mkt + '_') or name_up.startswith(mkt + ' ') or name_up.startswith(mkt + '-'):
+                market_sheets[mkt.lower()].append({'id': s['id'], 'mime': s['mimeType']})
 
     # Read D63 from "Hub forecast review" tab; sum if multiple sheets (KE/NG verticals)
+    GSHEET_MIME = 'application/vnd.google-apps.spreadsheet'
     forecasts = {}
-    for mkt, ids in market_sheets.items():
-        if not ids:
+    for mkt, file_infos in market_sheets.items():
+        if not file_infos:
             continue
         total = 0.0
         found = False
-        for sid in ids:
-            val = read_cell(sheets, sid, FORECAST_TAB, FORECAST_CELL)
+        for info in file_infos:
+            if info['mime'] == GSHEET_MIME:
+                val = read_cell(sheets, info['id'], FORECAST_TAB, FORECAST_CELL)
+            else:
+                val = read_cell_xlsx(drive, info['id'], FORECAST_TAB, FORECAST_CELL)
             if val is not None:
                 total += val
                 found = True
