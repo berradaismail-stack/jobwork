@@ -476,40 +476,38 @@ def api_extract():
 def api_debug_drive(month_id):
     try:
         year, month_num = month_id.split('-')
-        drive, _ = get_google_services()
-
-        # List root folders
-        root_folders = drive.files().list(
-            q=f"'{FORECAST_FOLDER_ID}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-            fields='files(id, name)'
-        ).execute().get('files', [])
+        drive, sheets_svc = get_google_services()
 
         year_folder_id = find_subfolder(drive, FORECAST_FOLDER_ID, year)
-        month_folders = []
-        month_files = []
+        if not year_folder_id:
+            return jsonify({'error': f'Year folder {year} not found'})
 
-        if year_folder_id:
-            month_folders = drive.files().list(
-                q=f"'{year_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                fields='files(id, name)'
-            ).execute().get('files', [])
+        month_name_str = month_name[int(month_num)]
+        month_folder_id = find_subfolder(drive, year_folder_id, month_name_str) or \
+                          find_subfolder(drive, year_folder_id, month_num)
+        if not month_folder_id:
+            return jsonify({'error': f'Month folder not found'})
 
-            # Also check month folder if found
-            month_name_str = month_name[int(month_num)]
-            month_folder_id = find_subfolder(drive, year_folder_id, month_name_str) or \
-                              find_subfolder(drive, year_folder_id, month_num)
-            if month_folder_id:
-                month_files = drive.files().list(
-                    q=f"'{month_folder_id}' in parents and trashed=false",
-                    fields='files(id, name, mimeType)'
-                ).execute().get('files', [])
+        all_files = list_sheets_in_folder(drive, month_folder_id)
+        results = []
+        for f in all_files:
+            try:
+                content = drive.files().get_media(fileId=f['id']).execute()
+                wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+                tab_names = wb.sheetnames
+                cell_val = None
+                if FORECAST_TAB in wb.sheetnames:
+                    cell_val = str(wb[FORECAST_TAB][FORECAST_CELL].value)
+                results.append({
+                    'name': f['name'],
+                    'tabs': tab_names,
+                    'target_tab_found': FORECAST_TAB in tab_names,
+                    'D63_value': cell_val
+                })
+            except Exception as e:
+                results.append({'name': f['name'], 'error': str(e)})
 
-        return jsonify({
-            'root_folders': [f['name'] for f in root_folders],
-            'year_folder_found': year_folder_id is not None,
-            'month_folders': [f['name'] for f in month_folders],
-            'files_in_month_folder': [{'name': f['name'], 'type': f['mimeType']} for f in month_files]
-        })
+        return jsonify({'files': results})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
