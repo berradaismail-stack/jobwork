@@ -502,46 +502,6 @@ def api_extract():
     return jsonify({'extracted': extracted, 'filename': filename, 'market_group': market_group})
 
 
-@app.route('/api/debug-drive/<month_id>')
-def api_debug_drive(month_id):
-    try:
-        year, month_num = month_id.split('-')
-        drive, sheets_svc = get_google_services()
-
-        year_folder_id = find_subfolder(drive, FORECAST_FOLDER_ID, year)
-        if not year_folder_id:
-            return jsonify({'error': f'Year folder {year} not found'})
-
-        month_name_str = month_name[int(month_num)]
-        month_folder_id = find_subfolder(drive, year_folder_id, month_name_str) or \
-                          find_subfolder(drive, year_folder_id, month_num)
-        if not month_folder_id:
-            return jsonify({'error': f'Month folder not found'})
-
-        all_files = list_sheets_in_folder(drive, month_folder_id)
-        results = []
-        for f in all_files:
-            try:
-                content = drive.files().get_media(fileId=f['id']).execute()
-                wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-                tab_names = wb.sheetnames
-                cell_val = None
-                sheet_name = next((s for s in tab_names if s.lower() == FORECAST_TAB.lower()), None)
-                val = None
-                if sheet_name:
-                    val = find_productive_hours_total(wb[sheet_name])
-                results.append({
-                    'name': f['name'],
-                    'target_tab_found': sheet_name is not None,
-                    'productive_hours_total': val
-                })
-            except Exception as e:
-                results.append({'name': f['name'], 'error': str(e)})
-
-        return jsonify({'files': results})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/sync-forecast/<month_id>', methods=['POST'])
 def api_sync_forecast(month_id):
